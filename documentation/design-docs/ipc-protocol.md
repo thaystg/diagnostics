@@ -263,6 +263,7 @@ enum class CommandSet : uint8_t
     EventPipe   = 0x02,
     Profiler    = 0x03,
     Process     = 0x04,
+    Debugger    = 0x05,
     // future
 
     Server = 0xFF,
@@ -331,7 +332,17 @@ enum class ProcessCommandId : uint8_t
 ```
 See: [Process Commands](#Process-Commands)
 
-Commands may use the generic `{ magic="DOTNET_IPC_V1"; size=20; command_set=0xFF (Server); command_id=0x00 (OK); reserved = 0x0000; }` to indicate success rather than having a command specific success `command_id`.
+```c++
+enum class DebuggerCommandId : uint8_t
+{
+    // reserved          = 0x00,
+    LoadInprocDebugger   = 0x01,
+    // future
+}
+```
+See: [Debugger Commands](#Debugger-Commands)
+
+Commands may use the generic`{ magic="DOTNET_IPC_V1"; size=20; command_set=0xFF (Server); command_id=0x00 (OK); reserved = 0x0000; }` to indicate success rather than having a command specific success `command_id`.
 
 For example, the Command to start a stream session with EventPipe would be `0x0202` made up of `0x02` (the `command_set` for EventPipe) and `0x02` (the `command_id` for CollectTracing).
 
@@ -1210,6 +1221,56 @@ Payload
     int32 hresult
 }
 ```
+
+## Debugger Commands
+
+### `LoadInprocDebugger`
+
+Command Code: `0x0501`
+
+The `LoadInprocDebugger` command instructs the runtime to load a debugger shared library on the target and invoke a named entry point in it, passing the file descriptor of the underlying diagnostics IPC socket so the loaded library can reuse the same connection for its own protocol (no second TCP connection is needed).
+
+The runtime sends the standard success response (`{ Magic; 20; 0xFF00; 0x0000; }`) **before** loading the library, because loading the library detaches the socket from the IPC stream and the protocol layer can no longer use it to send a response. After the entry point returns successfully, the diagnostics server automatically resumes the runtime startup (equivalent to a `ResumeRuntime` command), so a separate resume command is not required.
+
+In the event of an [error](#Errors), the runtime will attempt to send an error message and subsequently close the connection.
+
+#### Inputs:
+
+Header: `{ Magic; Size; 0x0501; 0x0000 }`
+
+* `string libraryName`: Name of the shared library to load on the target
+* `string entryPointName`: Name of an exported entry point to call in the loaded library
+
+The entry point must have the following signature and is invoked with the detached socket file descriptor:
+
+```c
+extern "C" HRESULT STDMETHODCALLTYPE <entryPointName>(int dsSocketFd);
+```
+
+#### Returns (as an IPC Message Payload):
+
+Header: `{ Magic; 20; 0xFF00; 0x0000; }`
+
+The success response is sent **before** the library is loaded. If parsing the payload or dispatching to the runtime fails, an error response is sent instead.
+
+##### Details:
+
+Input:
+```
+Payload
+{
+    uint32 libraryNameCharCount
+    array<wchar> libraryName  // UTF-16LE, null-terminated
+    uint32 entryPointNameCharCount
+    array<wchar> entryPointName  // UTF-16LE, null-terminated
+}
+```
+
+Returns: standard success header (no payload).
+
+##### Platform Support
+
+The CoreCLR runtime implements `LoadInprocDebugger`. Mono and NativeAOT currently return `E_NOTIMPL` (`0x80004001`) / `DS_IPC_E_NOTSUPPORTED`.
 
 ## Process Commands
 
