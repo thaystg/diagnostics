@@ -1732,7 +1732,7 @@ Header: `{ Magic; Size; 0x0501; 0x0000 }`
 The entry point must have the following signature and is invoked with the detached socket file descriptor:
 
 ```c
-extern "C" HRESULT STDMETHODCALLTYPE <entryPointName>(int dsSocketFd);
+extern "C" HRESULT <entryPointName>(int dsSocketFd);
 ```
 
 #### Returns (as an IPC Message Payload):
@@ -1749,8 +1749,8 @@ Input:
 ```
 Payload
 {
-    string libraryNameCharCount
-    string entryPointNameCharCount
+    string libraryName
+    string entryPointName
 }
 ```
 
